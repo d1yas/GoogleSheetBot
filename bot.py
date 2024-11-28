@@ -19,9 +19,6 @@ month_name = datetime.now().strftime("%B")
 
 EXCEL_FILE = "tasks.xlsx"
 
-
-
-
 RED_FILL = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
 GREEN_FILL = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="solid")
 
