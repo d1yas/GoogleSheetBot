@@ -121,7 +121,7 @@ async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup()
     for student in students:
         keyboard.add(InlineKeyboardButton(text=student, callback_data=f"student_{student}"))
-    await message.reply("Assalomu Aleykum\nOquvchilardan birini tanlang:", reply_markup=keyboard)
+    await message.reply(f"👋Assalomu Aleykum - <b>{message.from_user.full_name}</b>\n👨‍🎓O'quvchilardan birini tanlang:", reply_markup=keyboard, parse_mode="HTML")
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("student_"))
@@ -140,31 +140,28 @@ async def student_selected(callback_query: types.CallbackQuery, state: FSMContex
     col_name = str(today)
 
     cell = sheet.cell(row=row_index + 1, column=today + 1)
-    cell_color = cell.fill.start_color.rgb
 
-    # Bo'sh ustun uchun if
     if pd.isna(df.loc[row_index, col_name]):
         await state.update_data(selected_student=student_name)
-        await bot.send_message(callback_query.from_user.id, f"{student_name} uchun vazifa kiriting:")
+        await bot.send_message(callback_query.from_user.id, f"📝{student_name} uchun vazifa kiriting:")
         await Main.student_state_name.set()
 
-    # Malumot bor ustun uchun else
     else:
-        if cell.font == Font(color="FF006100", bold=True):  # Yashil rang
-            await bot.send_message(callback_query.from_user.id, f"{student_name} vazifasi bajarilgan.")
+        if cell.font == Font(color="FF006100", bold=True):
+            await bot.send_message(callback_query.from_user.id, f"📕{student_name} vazifasi bajarilgan.")
         else:
             keyboard = InlineKeyboardMarkup()
             keyboard.add(InlineKeyboardButton(text="Tasdiqlash", callback_data=f"approve_{student_name}"))
             await bot.send_message(
                 callback_query.from_user.id,
-                f"{student_name} uchun vazifa mavjud: {df.loc[row_index, col_name]}",
+                f"✔️{student_name} uchun vazifa mavjud: {df.loc[row_index, col_name]}",
                 reply_markup=keyboard
             )
 @dp.callback_query_handler(lambda c: c.data.startswith("approve_"))
 async def approve_selected(callback_query: types.CallbackQuery):
     student_name = callback_query.data.split("_")[1]
     approve_task(student_name)
-    await bot.send_message(callback_query.from_user.id, f"{student_name} uchun vazufa tasdiqlandi.")
+    await bot.send_message(callback_query.from_user.id, f"✅{student_name} uchun vazifa tasdiqlandi.")
 
 
 @dp.message_handler(state=Main.student_state_name, content_types=types.ContentType.TEXT)
@@ -173,13 +170,57 @@ async def input_task(message: types.Message, state: FSMContext):
     student_name = data.get("selected_student")
     if student_name:
         add_task(student_name, message.text)
-        await message.reply(f"Vazifa {student_name} uchun berildi.")
+        await message.reply(f"✋Vazifa {student_name} uchun berildi.")
         await state.finish()
 
 
-@dp.message_handler(commands=["get"])
+@dp.message_handler(commands=["getxlsx"])
 async def get_xlsx(message: types.Message):
     await bot.send_document(message.from_user.id, open(EXCEL_FILE, "rb"))
+
+
+@dp.message_handler(commands=['statistic'])
+async def send_statistics(message: types.Message):
+    global count_student
+    today = datetime.now().day
+    current_month = datetime.now().strftime("%B")
+
+    try:
+        workbook = load_workbook(EXCEL_FILE)
+        if current_month not in workbook.sheetnames:
+            await message.reply("Joriy oy uchun ma'lumotlar topilmadi.")
+            return
+
+        sheet = workbook[current_month]
+        completed_students = []
+
+        for row in sheet.iter_rows(min_row=2, min_col=1, max_col=today + 1):
+            student_name = row[0].value
+            cell = row[today]
+            if cell.font == Font(color="FF006100", bold=True):
+                completed_students.append("✅ "+student_name)
+
+        if completed_students:
+            a= len(completed_students)
+            if a == 7:
+                count_student = "🏆Bugun barcha O'quvchilaringiz vazifa bajargan"
+            elif a < 7:
+                not_completed_count_students = 0
+                for i in range(a):
+                    not_completed_count_students += 1
+                which_student_not_completed_count = 7 - not_completed_count_students
+                count_student = f"❌Bugun {which_student_not_completed_count}ta o'quvchi vazifa qilmagan"
+
+            response = f"{count_student}\n\n🕔<b>Bugun vazifani bajargan o'quvchilar:</b>\n\n" + "\n".join(completed_students)
+        else:
+            response = "Bugun hech bir o'quvchi vazifani bajarmagan."
+
+        await message.reply(response, parse_mode=types.ParseMode.HTML)
+
+    except FileNotFoundError:
+        await message.reply("Excel fayli topilmadi.")
+    except Exception as e:
+        await message.reply(f"Xatolik yuz berdi: {e}")
 
 
 if __name__ == "__main__":
