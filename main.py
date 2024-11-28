@@ -1,15 +1,17 @@
+from math import trunc
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-
+from states.state import Main
 import pandas as pd
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import datetime
 
-BOT_TOKEN = "TOKEN"
+BOT_TOKEN = "Token"
 
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
@@ -22,6 +24,15 @@ GREEN_FILL = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="so
 
 students = []
 
+
+def get_active_tasks():
+    today = datetime.now().day
+    df = pd.read_excel(EXCEL_FILE)
+    active_students = []
+    for _, row in df.iterrows():
+        if pd.isna(row[str(today)]):
+            active_students.append(row["Name"])
+    return active_students
 
 def init_excel():
     try:
@@ -99,8 +110,8 @@ def approve_task(student_name):
     col_name = str(today)
 
     if pd.notna(df.loc[row_index, col_name]):
-        cell = sheet.cell(row=row_index + 2, column=today + 1)
-        cell.font = Font(color="006100", bold=True)
+        cell = sheet.cell(row=row_index + 1, column=today+1)
+        cell.font = Font(color="FF006100", bold=True)
         cell.fill = GREEN_FILL
         workbook.save(EXCEL_FILE)
 
@@ -128,17 +139,27 @@ async def student_selected(callback_query: types.CallbackQuery, state: FSMContex
     row_index = df.index[df["Name"] == student_name].tolist()[0]
     col_name = str(today)
 
+    cell = sheet.cell(row=row_index + 1, column=today + 1)
+    cell_color = cell.fill.start_color.rgb
+
+    # Bo'sh ustun uchun if
     if pd.isna(df.loc[row_index, col_name]):
         await state.update_data(selected_student=student_name)
         await bot.send_message(callback_query.from_user.id, f"{student_name} uchun vazifa kiriting:")
+        await Main.student_state_name.set()
+
+    # Malumot bor ustun uchun else
     else:
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton(text="Tasdiqlash", callback_data=f"approve_{student_name}"))
-        await bot.send_message(callback_query.from_user.id,
-                               f"{student_name} uchun vazifa mavjud: {df.loc[row_index, col_name]}",
-                               reply_markup=keyboard)
-
-
+        if cell.font == Font(color="FF006100", bold=True):  # Yashil rang
+            await bot.send_message(callback_query.from_user.id, f"{student_name} vazifasi bajarilgan.")
+        else:
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(InlineKeyboardButton(text="Tasdiqlash", callback_data=f"approve_{student_name}"))
+            await bot.send_message(
+                callback_query.from_user.id,
+                f"{student_name} uchun vazifa mavjud: {df.loc[row_index, col_name]}",
+                reply_markup=keyboard
+            )
 @dp.callback_query_handler(lambda c: c.data.startswith("approve_"))
 async def approve_selected(callback_query: types.CallbackQuery):
     student_name = callback_query.data.split("_")[1]
@@ -146,7 +167,7 @@ async def approve_selected(callback_query: types.CallbackQuery):
     await bot.send_message(callback_query.from_user.id, f"{student_name} uchun vazufa tasdiqlandi.")
 
 
-@dp.message_handler(state="*", content_types=types.ContentType.TEXT)
+@dp.message_handler(state=Main.student_state_name, content_types=types.ContentType.TEXT)
 async def input_task(message: types.Message, state: FSMContext):
     data = await state.get_data()
     student_name = data.get("selected_student")
@@ -154,6 +175,11 @@ async def input_task(message: types.Message, state: FSMContext):
         add_task(student_name, message.text)
         await message.reply(f"Vazifa {student_name} uchun berildi.")
         await state.finish()
+
+
+@dp.message_handler(commands=["get"])
+async def get_xlsx(message: types.Message):
+    await bot.send_document(message.from_user.id, open(EXCEL_FILE, "rb"))
 
 
 if __name__ == "__main__":
