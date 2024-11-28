@@ -5,7 +5,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 import pandas as pd
-from openpyxl import load_workbook, workbook
+from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import datetime
 
@@ -15,12 +15,7 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-month_name = datetime.now().strftime("%B")
-
 EXCEL_FILE = "tasks.xlsx"
-
-
-
 
 RED_FILL = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
 GREEN_FILL = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="solid")
@@ -30,60 +25,80 @@ students = []
 
 def init_excel():
     try:
-        load_workbook(EXCEL_FILE)
+        workbook = load_workbook(EXCEL_FILE)
     except FileNotFoundError:
-        df = pd.DataFrame(columns=["Name"] + [str(i) for i in range(1, 32)])
-        df["Name"] = ["Shamsiddin", "Alisher", "Baxtiyor", "Diyas", "Behruz", "Sardor", "Sarvar"]
-        df.to_excel(EXCEL_FILE, index=False)
+        workbook = Workbook()
+        workbook.save(EXCEL_FILE)
 
+    workbook = load_workbook(EXCEL_FILE)
+    current_month = datetime.now().strftime("%B")
 
+    if current_month not in workbook.sheetnames:
+        sheet = workbook.create_sheet(title=current_month)
+        sheet.append(["Name"] + [str(i) for i in range(1, 32)])  # Добавляем заголовки
+        students_data = [
+            "Shamsiddin", "Alisher", "Baxtiyor", "Diyas", "Behruz", "Sardor", "Sarvar"
+        ]
+        for student in students_data:
+            sheet.append([student] + [""] * 31)
+        workbook.save(EXCEL_FILE)
 
 
 def load_students():
     global students
-    df = pd.read_excel(EXCEL_FILE)
-    students = df["Name"].tolist()
+    workbook = load_workbook(EXCEL_FILE)
+    current_month = datetime.now().strftime("%B")
+    if current_month not in workbook.sheetnames:
+        init_excel()
+    df = pd.DataFrame(workbook[current_month].values)
+    students = df.iloc[1:, 0].tolist()
 
 
 def add_task(student_name, task_text):
     today = datetime.now().day
-
-    df = pd.read_excel(EXCEL_FILE)
-
-    row_index = df.index[df["Name"] == student_name].tolist()[0]
-    col_name = str(today)
-
-    df.loc[row_index, col_name] = task_text
-    df.to_excel(EXCEL_FILE, index=False)
+    current_month = datetime.now().strftime("%B")
 
     workbook = load_workbook(EXCEL_FILE)
-    sheet = workbook.active
+
+    if current_month not in workbook.sheetnames:
+        init_excel()
+    sheet = workbook[current_month]
 
     for row in range(2, sheet.max_row + 1):
-        for col in range(2, sheet.max_column + 1):
-            cell = sheet.cell(row=row, column=col)
-            if cell.value and cell.fill != GREEN_FILL:
-                cell.fill = RED_FILL
+        if sheet.cell(row=row, column=1).value == student_name:
+            task_cell = sheet.cell(row=row, column=today + 1)
+            task_cell.value = task_text
+            task_cell.fill = RED_FILL
 
-    new_task_cell = sheet.cell(row=row_index + 2, column=today + 1)
-    new_task_cell.value = task_text
-    new_task_cell.fill = RED_FILL
-
-    column_letter = sheet.cell(row=1, column=today + 1).column_letter
-    sheet.column_dimensions[column_letter].width = max(20, len(task_text))
+            column_letter = sheet.cell(row=1, column=today + 1).column_letter
+            sheet.column_dimensions[column_letter].width = max(
+                sheet.column_dimensions[column_letter].width, len(task_text) + 5
+            )
+            break
 
     workbook.save(EXCEL_FILE)
 
 
+
 def approve_task(student_name):
+
     today = datetime.now().day
-    df = pd.read_excel(EXCEL_FILE)
+    current_month = datetime.now().strftime("%B")
+
+    workbook = load_workbook(EXCEL_FILE)
+
+    if current_month not in workbook.sheetnames:
+        init_excel()
+
+    sheet = workbook[current_month]
+    df = pd.DataFrame(sheet.values)
+    df.columns = df.iloc[0]
+    df = df[1:]
+
     row_index = df.index[df["Name"] == student_name].tolist()[0]
     col_name = str(today)
 
     if pd.notna(df.loc[row_index, col_name]):
-        workbook = load_workbook(EXCEL_FILE)
-        sheet = workbook.active
         cell = sheet.cell(row=row_index + 2, column=today + 1)
         cell.font = Font(color="006100", bold=True)
         cell.fill = GREEN_FILL
@@ -102,7 +117,13 @@ async def start_command(message: types.Message):
 async def student_selected(callback_query: types.CallbackQuery, state: FSMContext):
     student_name = callback_query.data.split("_")[1]
     today = datetime.now().day
-    df = pd.read_excel(EXCEL_FILE)
+    current_month = datetime.now().strftime("%B")
+
+    workbook = load_workbook(EXCEL_FILE)
+    sheet = workbook[current_month]
+    df = pd.DataFrame(sheet.values)
+    df.columns = df.iloc[0]
+    df = df[1:]
 
     row_index = df.index[df["Name"] == student_name].tolist()[0]
     col_name = str(today)
@@ -113,7 +134,6 @@ async def student_selected(callback_query: types.CallbackQuery, state: FSMContex
     else:
         keyboard = InlineKeyboardMarkup()
         keyboard.add(InlineKeyboardButton(text="Tasdiqlash", callback_data=f"approve_{student_name}"))
-        # keyboard.add(InlineKeyboardButton(text="Yana vazifa berish", callback_data=f"new_task_{student_name}"))
         await bot.send_message(callback_query.from_user.id,
                                f"{student_name} uchun vazifa mavjud: {df.loc[row_index, col_name]}",
                                reply_markup=keyboard)
@@ -123,16 +143,7 @@ async def student_selected(callback_query: types.CallbackQuery, state: FSMContex
 async def approve_selected(callback_query: types.CallbackQuery):
     student_name = callback_query.data.split("_")[1]
     approve_task(student_name)
-    # keyboard = InlineKeyboardMarkup()
-    # keyboard.add(InlineKeyboardButton(text="Яна вазифа бериш", callback_data=f"new_task_{student_name}"))
     await bot.send_message(callback_query.from_user.id, f"{student_name} uchun vazufa tasdiqlandi.")
-
-
-# @dp.callback_query_handler(lambda c: c.data.startswith("new_task_"))
-# async def new_task(callback_query: types.CallbackQuery, state: FSMContext):
-#     student_name = callback_query.data.split("_")[1]
-#     await state.update_data(selected_student=student_name)
-#     await bot.send_message(callback_query.from_user.id, f"{student_name} учун янги вазифани киритинг:")
 
 
 @dp.message_handler(state="*", content_types=types.ContentType.TEXT)
