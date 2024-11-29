@@ -11,13 +11,14 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import datetime
 
-BOT_TOKEN = "Token"
+BOT_TOKEN = "sss"
 
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
 EXCEL_FILE = "tasks.xlsx"
+ADMIN = 123456
 
 RED_FILL = PatternFill(start_color="FF6666", end_color="FF6666", fill_type="solid")
 GREEN_FILL = PatternFill(start_color="66CC66", end_color="66CC66", fill_type="solid")
@@ -118,10 +119,14 @@ def approve_task(student_name):
 
 @dp.message_handler(commands=["start"])
 async def start_command(message: types.Message):
-    keyboard = InlineKeyboardMarkup()
-    for student in students:
-        keyboard.add(InlineKeyboardButton(text=student, callback_data=f"student_{student}"))
-    await message.reply(f"👋Assalomu Aleykum - <b>{message.from_user.full_name}</b>\n👨‍🎓O'quvchilardan birini tanlang:", reply_markup=keyboard, parse_mode="HTML")
+    if message.from_user.id == ADMIN:
+        keyboard = InlineKeyboardMarkup()
+        for student in students:
+            keyboard.add(InlineKeyboardButton(text=student, callback_data=f"student_{student}"))
+        await message.reply(f"👋Assalomu Aleykum - <b>{message.from_user.full_name}</b>\n👨‍🎓O'quvchilardan birini tanlang:", reply_markup=keyboard, parse_mode="HTML")
+    else:
+        await message.answer("Siz bu botni ishlatish huquqiga ega emassiz❌")
+
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("student_"))
@@ -176,52 +181,57 @@ async def input_task(message: types.Message, state: FSMContext):
 
 @dp.message_handler(commands=["getxlsx"])
 async def get_xlsx(message: types.Message):
-    await bot.send_document(message.from_user.id, open(EXCEL_FILE, "rb"))
+    if message.from_user.id == ADMIN:
+        await bot.send_document(message.from_user.id, open(EXCEL_FILE, "rb"))
+    else:
+        await message.answer("Siz bizning exel fileni olish huquqiga ega emassiz❌")
 
 
 @dp.message_handler(commands=['statistic'])
 async def send_statistics(message: types.Message):
-    global count_student
-    today = datetime.now().day
-    current_month = datetime.now().strftime("%B")
+    if message.from_user.id == ADMIN:
+        global count_student
+        today = datetime.now().day
+        current_month = datetime.now().strftime("%B")
 
-    try:
-        workbook = load_workbook(EXCEL_FILE)
-        if current_month not in workbook.sheetnames:
-            await message.reply("Joriy oy uchun ma'lumotlar topilmadi.")
-            return
+        try:
+            workbook = load_workbook(EXCEL_FILE)
+            if current_month not in workbook.sheetnames:
+                await message.reply("Joriy oy uchun ma'lumotlar topilmadi.")
+                return
 
-        sheet = workbook[current_month]
-        completed_students = []
+            sheet = workbook[current_month]
+            completed_students = []
 
-        for row in sheet.iter_rows(min_row=2, min_col=1, max_col=today + 1):
-            student_name = row[0].value
-            cell = row[today]
-            if cell.font == Font(color="FF006100", bold=True):
-                completed_students.append("✅ "+student_name)
+            for row in sheet.iter_rows(min_row=2, min_col=1, max_col=today + 1):
+                student_name = row[0].value
+                cell = row[today]
+                if cell.font == Font(color="FF006100", bold=True):
+                    completed_students.append("✅ "+student_name)
 
-        if completed_students:
-            a= len(completed_students)
-            if a == 7:
-                count_student = "🏆Bugun barcha O'quvchilaringiz vazifa bajargan"
-            elif a < 7:
-                not_completed_count_students = 0
-                for i in range(a):
-                    not_completed_count_students += 1
-                which_student_not_completed_count = 7 - not_completed_count_students
-                count_student = f"❌Bugun {which_student_not_completed_count}ta o'quvchi vazifa qilmagan"
+            if completed_students:
+                a= len(completed_students)
+                if a == 7:
+                    count_student = "🏆Bugun barcha O'quvchilaringiz vazifa bajargan"
+                elif a < 7:
+                    not_completed_count_students = 0
+                    for i in range(a):
+                        not_completed_count_students += 1
+                    which_student_not_completed_count = 7 - not_completed_count_students
+                    count_student = f"❌Bugun {which_student_not_completed_count}ta o'quvchi vazifa qilmagan"
 
-            response = f"{count_student}\n\n🕔<b>Bugun vazifani bajargan o'quvchilar:</b>\n\n" + "\n".join(completed_students)
-        else:
-            response = "Bugun hech bir o'quvchi vazifani bajarmagan."
+                response = f"{count_student}\n\n🕔<b>Bugun vazifani bajargan o'quvchilar:</b>\n\n" + "\n".join(completed_students)
+            else:
+                response = "Bugun hech bir o'quvchi vazifani bajarmagan."
 
-        await message.reply(response, parse_mode=types.ParseMode.HTML)
+            await message.reply(response, parse_mode=types.ParseMode.HTML)
 
-    except FileNotFoundError:
-        await message.reply("Excel fayli topilmadi.")
-    except Exception as e:
-        await message.reply(f"Xatolik yuz berdi: {e}")
-
+        except FileNotFoundError:
+            await message.reply("Excel fayli topilmadi.")
+        except Exception as e:
+            await message.reply(f"Xatolik yuz berdi: {e}")
+    else:
+        await message.answer("Siz bu botda admin emassiz❌")
 
 if __name__ == "__main__":
     init_excel()
